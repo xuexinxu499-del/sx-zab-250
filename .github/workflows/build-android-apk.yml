@@ -14,7 +14,7 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -25,44 +25,41 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Extract uploaded ZIP
+      - name: Extract web app
         run: |
-          ZIP_FILE="$(find . -maxdepth 1 -type f -name '*.zip' | head -n1)"
-          if [ -z "$ZIP_FILE" ]; then
-            echo "没有找到上传的 ZIP 文件"
-            exit 1
-          fi
-          mkdir -p extracted
+          ZIP_FILE=$(find . -maxdepth 1 -iname '*.zip' -print -quit)
+          test -n "$ZIP_FILE"
+          mkdir extracted
           unzip -q "$ZIP_FILE" -d extracted
-          PACKAGE_JSON="$(find extracted -name package.json -print -quit)"
-          if [ -z "$PACKAGE_JSON" ]; then
-            echo "ZIP 中没有找到 package.json"
-            exit 1
-          fi
-          PROJECT_DIR="$(dirname "$PACKAGE_JSON")"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          INDEX=$(find extracted -name index.html -print -quit)
+          test -n "$INDEX"
+          mkdir www
+          cp -a "$(dirname "$INDEX")/." www/
 
-      - name: Install dependencies
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: npm install
-
-      - name: Generate Android project
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: npx cap add android
-
-      - name: Sync web assets
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: npx cap sync android
+      - name: Prepare Capacitor
+        run: |
+          npm init -y
+          npm install @capacitor/core@7 @capacitor/android@7
+          npm install --save-dev @capacitor/cli@7
+          cat > capacitor.config.json <<'EOF'
+          {
+            "appId": "com.sxzsb.chongci250",
+            "appName": "陕西专升本250分冲刺",
+            "webDir": "www"
+          }
+          EOF
+          npx cap add android
+          npx cap sync android
 
       - name: Build APK
-        working-directory: ${{ env.PROJECT_DIR }}/android
         run: |
+          cd android
           chmod +x gradlew
           ./gradlew assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: shanxi-zsb-250-debug-apk
-          path: ${{ env.PROJECT_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
+          name: shanxi-zsb-250-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 14
