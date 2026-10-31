@@ -1,0 +1,68 @@
+
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Extract uploaded ZIP
+        run: |
+          ZIP_FILE="$(find . -maxdepth 1 -type f -name '*.zip' | head -n1)"
+          if [ -z "$ZIP_FILE" ]; then
+            echo "没有找到上传的 ZIP 文件"
+            exit 1
+          fi
+          mkdir -p extracted
+          unzip -q "$ZIP_FILE" -d extracted
+          PACKAGE_JSON="$(find extracted -name package.json -print -quit)"
+          if [ -z "$PACKAGE_JSON" ]; then
+            echo "ZIP 中没有找到 package.json"
+            exit 1
+          fi
+          PROJECT_DIR="$(dirname "$PACKAGE_JSON")"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: npm install
+
+      - name: Generate Android project
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: npx cap add android
+
+      - name: Sync web assets
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: npx cap sync android
+
+      - name: Build APK
+        working-directory: ${{ env.PROJECT_DIR }}/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: shanxi-zsb-250-debug-apk
+          path: ${{ env.PROJECT_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
